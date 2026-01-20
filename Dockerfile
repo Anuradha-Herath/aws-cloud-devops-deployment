@@ -1,22 +1,29 @@
 # Multi-stage build for optimized production image
-FROM node:18-alpine AS base
+FROM node:18-slim AS base
 
 # Install dependencies only when needed
 FROM base AS deps
-RUN apk add --no-cache libc6-compat
 WORKDIR /app
 
-# Copy package files
+# Copy package files (package-lock.json is needed for faster builds)
 COPY package.json package-lock.json* ./
-RUN npm ci
+# Use npm ci with optimizations for faster, reproducible builds
+RUN if [ -f package-lock.json ]; then \
+      npm ci --prefer-offline --no-audit --loglevel=error --no-fund; \
+    else \
+      npm install --prefer-offline --no-audit --loglevel=error --no-fund; \
+    fi
 
 # Rebuild the source code only when needed
 FROM base AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
+# Copy source code (node_modules excluded via .dockerignore)
 COPY . .
 
 # Build the Next.js application
+# Ensure public directory exists (create empty if it doesn't exist)
+RUN mkdir -p public
 RUN npm run build
 
 # Production image, copy all the files and run next
@@ -29,7 +36,7 @@ RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nextjs
 
 # Copy necessary files
-COPY --from=builder /app/public ./public
+COPY --from=builder --chown=nextjs:nodejs /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 

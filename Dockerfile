@@ -5,25 +5,22 @@ FROM node:18-slim AS base
 FROM base AS deps
 WORKDIR /app
 
-# Copy package files (package-lock.json is needed for faster builds)
+# Copy package files
 COPY package.json package-lock.json* ./
-# Use npm ci with optimizations for faster, reproducible builds
+# Use npm ci with optimizations
 RUN if [ -f package-lock.json ]; then \
-      npm ci --prefer-offline --no-audit --loglevel=error --no-fund; \
+      npm ci --prefer-offline --no-audit --loglevel=error; \
     else \
-      npm install --prefer-offline --no-audit --loglevel=error --no-fund; \
+      npm install --prefer-offline --no-audit --loglevel=error; \
     fi
 
 # Rebuild the source code only when needed
 FROM base AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
-# Copy source code (node_modules excluded via .dockerignore)
 COPY . .
 
 # Build the Next.js application
-# Ensure public directory exists (create empty if it doesn't exist)
-RUN mkdir -p public
 RUN npm run build
 
 # Production image, copy all the files and run next
@@ -36,7 +33,7 @@ RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nextjs
 
 # Copy necessary files
-COPY --from=builder --chown=nextjs:nodejs /app/public ./public
+COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
